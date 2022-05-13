@@ -4,6 +4,7 @@
 #include "utils.hpp"
 namespace HttpServer {
 #define LOG(level, message) Log::PrintLog(#level, message, __FILE__, __LINE__)
+#define DEBUG 0
 #define INFO 1
 #define WARNING 2
 #define ERROR 3
@@ -24,8 +25,12 @@ namespace HttpServer {
 class Log {
 public:
   static void PrintLog(std::string level, std::string message, std::string filename, int line) {
+    if(level == "DEBUG") {
+      printf("%s    \033[0m\033[1;34m%s\033[0m [%s]\t<%d>\t%s\n", Time::GetCurrentTime().c_str(), level.c_str(), filename.c_str(), line, message.c_str());
 
-    if(level == "INFO") {
+    }
+
+    else if(level == "INFO") {
       printf("%s    \033[0m\033[1;32m%s\033[0m [%s]\t<%d>\t%s\n", Time::GetCurrentTime().c_str(), level.c_str(), filename.c_str(), line, message.c_str());
       //std::cout << Time::GetCurrentTime() << "     " << level << " [" << filename << "]" << " <" << line << "> " << message << std::endl; 
     }

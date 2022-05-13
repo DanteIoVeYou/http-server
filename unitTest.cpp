@@ -1,6 +1,7 @@
 #include "httpServer.hpp"
 #include "utils.hpp" 
 #include "log.hpp"
+#include <fstream>
 int main(int argc, char* argv[])
 {
   if(argc != 2) {
@@ -12,5 +13,11 @@ int main(int argc, char* argv[])
   //std::string s = HttpServer::Time::GetCurrentTime();
   //std::cout << s << std::endl;
   //HttpServer::LOG(INFO, "hello");
+  
+  //std::ifstream s("wwwroot/index.html");
+  //std::string line;
+  //while(std::getline(s, line)) {
+  //  std::cout << line << std::endl;
+  //}
   return 0;
 }
