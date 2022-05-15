@@ -24,7 +24,7 @@ namespace HttpServer {
 #define ROOTPATH "wwwroot"
 
 struct HttpRequest {
-  HttpRequest(): cgi(false) {}
+  HttpRequest(): request_content_length(0), cgi(false) {}
   // 请求行
   std::string request_line;
   std::string request_method;
@@ -35,24 +35,34 @@ struct HttpRequest {
   // 请求报头
   std::vector<std::string> request_header;
   std::unordered_map<std::string, std::string> request_header_kv;
+  size_t request_content_length;
   // 请求体
   std::string request_body;
   bool cgi;
 };
 
 struct HttpResponse {
-  HttpResponse(): response_content_type("Content-Type: "), response_content_length("Content-Length: ") {}
+  HttpResponse(): response_content_type("Content-Type: "), response_content_length("Content-Length: "), response_spaceline("\r\n") {}
   int status_code;
   std::string response_line;
   std::vector<std::string> response_header;
   std::string response_content_type;
   std::string response_content_length;
-  std::string response_spaceline = "\n";
+  std::string response_spaceline;
   std::string response_body;
 };
 
 class EndPoint {
 private:
+
+  void ErrorHandler() {
+    _response.response_line += "HTTP/1.0";
+    _response.response_line += " ";
+    _response.response_line += std::to_string(NOT_FOUND);
+    _response.response_line += " ";
+    _response.response_line += _status_code_map[NOT_FOUND];
+    _response.response_line += "\n";
+  }
 
   void ReadHttpRequestLine() {
     ReadLine(_sock, &_request.request_line);
@@ -80,7 +90,6 @@ private:
     ss << _request.request_line;
     ss >> _request.request_method >> _request.request_uri >> _request.request_version;
     //LOG(DEBUG, _request.request_line.c_str());
-    //std::cout << _request.request_method << "=========" << _request.request_uri << "============" << _request.request_version << std::endl;
     
     // 把请求方法统一转为大写
     std::transform(_request.request_method.begin(), _request.request_method.end(), _request.request_method.begin(), ::toupper);
@@ -122,33 +131,24 @@ private:
     //for(auto header_line: _request.request_header_kv) {
     //  std::cout << header_line.first << "===============" << header_line.second << std::endl;
     //}
-
+  }
+   
+  void ReadHttpRequestBody() {
     // 根据请求方法是GET还是POST来判断是否有请求体
     if(_request.request_method == "POST") {
       // 读取请求体
-      ReadLine(_sock, &_request.request_body);
+      if(_request.request_header_kv.find("Content-Length") != _request.request_header_kv.end()) {
+        _request.request_content_length = atoi(_request.request_header_kv["Content-Length"].c_str());
+        ReadLine(_sock, &_request.request_body);
+        if(_request.request_body.size() != _request.request_content_length) {
+          LOG(ERROR, "read request body error");
+        }
+      }
     }
   }
-  // 
 
-  void ExitBuildResponse() {
-    _response.response_line += "HTTP/1.0";
-    _response.response_line += " ";
-    _response.response_line += std::to_string(NOT_FOUND);
-    _response.response_line += " ";
-    _response.response_line += _status_code_map[NOT_FOUND];
-    _response.response_line += "\n";
-  }
   
-  void NoCgiHttpResponse() {
-    _response.response_line += "HTTP/1.0";
-    _response.response_line += " ";
-    _response.response_line += std::to_string(OK);
-    _response.response_line += " ";
-    _response.response_line += _status_code_map[OK];
-    _response.response_line += "\n";
-    LOG(DEBUG, "200 OK");
-
+  int NoCgiHttpResponse() {
     std::ifstream in(_request.request_uri.c_str(), std::ios::in | std::ios::binary);
     if(in.is_open()) {
       std::string line;
@@ -156,9 +156,12 @@ private:
         _response.response_body += line;
       }
       LOG(DEBUG, "read file success");
+      return 200;
     }
     else {
       LOG(ERROR, "open file failed");
+      ErrorHandler();
+      return 404;
     }
   }
 
@@ -172,54 +175,63 @@ private:
     struct stat st;
     resource_path += ROOTPATH;
     resource_path += _request.request_path;
-    // 1.请求根目录或者带/的目录下的index.html
     if(_request.request_path.back() == '/') {
+      // 1.请求根目录或者带/的目录下的index.html
       resource_path += "index.html";
       LOG(DEBUG, resource_path.c_str());
     }
-    // 2.请求的是一个非根目录，不带/，默认是请求该目录下的index.html
-    else if(S_ISDIR(stat(resource_path.c_str(), &st))) {
-      resource_path += "/index.html";
-      LOG(DEBUG, resource_path.c_str());
-    }
-    // 3.请求的不是目录
     else {
-      LOG(DEBUG, resource_path.c_str());
-    }
-    _request.request_uri = resource_path;
-    // 构建http响应
-    // 判断请求资源是否存在
-    // 1. 请求的资源不存在
-    if(stat(_request.request_uri.c_str(), &st) == -1){
-      _response.status_code = 404;
-      ExitBuildResponse();
-    }
-    // 2. 资源存在，根据请求方法进行不同的处理
-    else {
-      _response.status_code = 200;
-      if(_request.request_method == "GET") {
-        LOG(DEBUG, "GET METHOD");
-        if(_request.request_paramenter.size() == 0) {
-          // GET方法不带参数
-          if((st.st_mode&S_IXUSR) || (st.st_mode&S_IXGRP) || (st.st_mode&S_IXOTH)) {
-            CgiHttpResponse();
-          }
-          else {
-            NoCgiHttpResponse();
-          }
+      if(stat(resource_path.c_str(), &st) == 0) {
+        if(S_ISDIR(st.st_mode)) {
+          // 2.请求的是一个目录，不带/，默认是请求该目录下的index.html
+          resource_path += "/index.html";
+          LOG(DEBUG, resource_path.c_str());
         }
         else {
-          // GET方法带参数
-          CgiHttpResponse();
+          // 3.请求的不是目录，是具体资源
+          LOG(DEBUG, resource_path.c_str());
         }
       }
-      else if(_request.request_method == "POST") {
+      else {
+        // 4. 请求的资源不存在
+        ErrorHandler();
+        return;
+      }
+    }
+    // 构建http响应
+    // 根据请求方法进行不同的处理
+    // 由于对于uri进行了处理，此时的uri可能与刚开始的uri不同，故文件的st需要重新获取
+    _request.request_uri = resource_path;
+    stat(_request.request_uri.c_str(), &st);
+    if(_request.request_method == "GET") {
+      LOG(DEBUG, "GET METHOD");
+      if(_request.request_paramenter.size() == 0) {
+        // GET方法不带参数
+        if((st.st_mode&S_IXUSR) || (st.st_mode&S_IXGRP) || (st.st_mode&S_IXOTH)) {
           CgiHttpResponse();
+        }
+        else {
+          _response.status_code = NoCgiHttpResponse();
+          _response.response_line += "HTTP/1.0";
+          _response.response_line += " ";
+          _response.response_line += std::to_string(_response.status_code);
+          _response.response_line += " ";
+          _response.response_line += _status_code_map[_response.status_code];
+          _response.response_line += "\n";
+        }
       }
       else {
-        // other method
-        ExitBuildResponse();
+        // GET方法带参数
+        CgiHttpResponse();
       }
+    }
+    else if(_request.request_method == "POST") {
+        CgiHttpResponse();
+    }
+    else {
+      // other method
+      ErrorHandler();
+      return;
     }
   }
 
@@ -229,7 +241,6 @@ private:
     _response.response_content_type += "\n";
     _response.response_content_length += std::to_string(_response.response_body.size());
     _response.response_content_length += "\n";
-
   }
 
   void SendRespToBuffer() {
@@ -252,6 +263,7 @@ public:
   void ParseHttpRequest() {
     ParseHttpRequestLine();
     ParseHttpRequestHeader();;
+    ReadHttpRequestBody();
   }
 
   void BuildHttpResponse() {
