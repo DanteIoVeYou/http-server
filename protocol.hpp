@@ -12,6 +12,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include "utils.hpp"
@@ -109,6 +110,7 @@ private:
     else if(_request.request_method == "POST") {
       //LOG(DEBUG, _request.request_method.c_str());
       _request.cgi = true;
+      _request.request_path = _request.request_uri;
     }
     else {
       // other request method
@@ -140,7 +142,10 @@ private:
       if(_request.request_header_kv.find("Content-Length") != _request.request_header_kv.end()) {
         _request.request_content_length = atoi(_request.request_header_kv["Content-Length"].c_str());
         ReadLine(_sock, &_request.request_body);
+        //  去掉换行
+        _request.request_body.resize(_request.request_body.size() - 1);
         if(_request.request_body.size() != _request.request_content_length) {
+          std::cout << "body: " << _request.request_body.size() << " " << "length: " << _request.request_content_length << std::endl;
           LOG(ERROR, "read request body error");
         }
       }
@@ -166,7 +171,86 @@ private:
   }
 
   void CgiHttpResponse() {
+    LOG(INFO, "Cgi start");
+    int input[2];
+    int output[2];
+    if(pipe(input) < 0) {
+      LOG(ERROR, "create pipe failed");
+      ErrorHandler();
+    }
+    if(pipe(output) < 0) {
+      LOG(ERROR, "create pipe failed");
+      ErrorHandler();
+    }
+    pid_t pid = fork();
+    if(pid < 0) {
+      LOG(ERROR, "fork failed");
+      ErrorHandler();
+    }
+    else if(pid == 0) {
+      // child
+      close(input[0]);
+      close(output[1]);
+      // 将请求方法导入环境变量
+      std::string method_env = "METHOD=";
+      method_env += _request.request_method;
+      LOG(DEBUG, _request.request_method.c_str());
+      putenv((char*)method_env.c_str());
+      // GET的参数以环境变量导入，POST的参数以匿名管道的方式传递
+      if(_request.request_method == "GET") {
+        std::string paramenter_env = "PARA=";
+        paramenter_env += _request.request_paramenter;
+        putenv((char*)paramenter_env.c_str());
+        LOG(INFO, paramenter_env.c_str());
+        LOG(INFO, "child GET METHOD");
+      }
+      else if(_request.request_method == "POST") {
+        LOG(INFO, "child POST METHOD");
+        std::string content_length_env = "LENGTH=";
+        content_length_env += std::to_string(_request.request_content_length);
+        LOG(DEBUG, ("cllllll:" + std::to_string(_request.request_content_length)).c_str());
+        putenv((char*)content_length_env.c_str());
 
+        //char* start = (char*)_request.request_body.c_str();
+        //for(size_t i = 0; i < _request.request_body.size(); i++) {
+        //  write(input[1], start + i, 1);
+        //  std::cout << "write: " << *(start+i) << std::endl;
+        //}
+      }
+      else {
+        // other method
+      }
+      // 重定向
+      int dup_write = dup2(input[1], 0);
+      int dup_read = dup2(output[0], 1);
+      if(dup_write == -1 || dup_read == -1) {
+        LOG(ERROR, "dup2 error");
+        ErrorHandler();
+      }
+      execl(_request.request_uri.c_str(), _request.request_uri.c_str(), nullptr);
+    }
+    else {
+      // father
+      close(input[1]);
+      close(output[0]);
+      if(_request.request_method == "POST") {
+        char* start = (char*)_request.request_body.c_str();
+        for(size_t i = 0; i < _request.request_body.size(); i++) {
+          write(output[1], start + i, 1);
+          std::cout << "write: " << *(start+i) << std::endl;
+        }
+      }
+      int status;
+      waitpid(pid, &status, 0);
+      status = WIFEXITED(status);
+      std::string info = "wait success, status code: ";
+      info += std::to_string(status);
+      LOG(INFO, info.c_str());
+      if(WIFSIGNALED(status)) {
+        // 被信号中断
+        ErrorHandler();
+      }
+    }
   }
 
   void BuildHttpResponseLine() {
@@ -181,6 +265,7 @@ private:
       LOG(DEBUG, resource_path.c_str());
     }
     else {
+      LOG(DEBUG, resource_path.c_str());
       if(stat(resource_path.c_str(), &st) == 0) {
         if(S_ISDIR(st.st_mode)) {
           // 2.请求的是一个目录，不带/，默认是请求该目录下的index.html
@@ -189,7 +274,7 @@ private:
         }
         else {
           // 3.请求的不是目录，是具体资源
-          LOG(DEBUG, resource_path.c_str());
+          LOG(INFO, resource_path.c_str());
         }
       }
       else {

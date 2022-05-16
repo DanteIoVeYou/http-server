@@ -1,6 +1,8 @@
 #pragma once 
 #include <iostream>
 #include <string>
+//#include <cstdio>
+//#include <cstdlib>
 #include "utils.hpp"
 namespace HttpServer {
 #define LOG(level, message) Log::PrintLog(#level, message, __FILE__, __LINE__)
@@ -25,20 +27,26 @@ namespace HttpServer {
 class Log {
 public:
   static void PrintLog(std::string level, std::string message, std::string filename, int line) {
+    FILE* fp = fopen("srv.log", "a+");
     if(level == "DEBUG") {
       printf("%s    \033[0m\033[1;34m%s\033[0m [%s]\t<%d>\t%s\n", Time::GetCurrentTime().c_str(), level.c_str(), filename.c_str(), line, message.c_str());
-
+      fprintf(fp, "%s    %s [%s]\t<%d>\t%s\n", Time::GetCurrentTime().c_str(), level.c_str(), filename.c_str(), line, message.c_str());
     }
 
     else if(level == "INFO") {
       printf("%s    \033[0m\033[1;32m%s\033[0m [%s]\t<%d>\t%s\n", Time::GetCurrentTime().c_str(), level.c_str(), filename.c_str(), line, message.c_str());
+      fprintf(fp, "%s    %s [%s]\t<%d>\t%s\n", Time::GetCurrentTime().c_str(), level.c_str(), filename.c_str(), line, message.c_str());
       //std::cout << Time::GetCurrentTime() << "     " << level << " [" << filename << "]" << " <" << line << "> " << message << std::endl; 
     }
     else if(level == "ERROR") {
       printf("%s    \033[0m\033[1;31m%s\033[0m [%s]\t<%d>\t%s\n", Time::GetCurrentTime().c_str(), level.c_str(), filename.c_str(), line, message.c_str());
+      fprintf(fp, "%s    %s [%s]\t<%d>\t%s\n", Time::GetCurrentTime().c_str(), level.c_str(), filename.c_str(), line, message.c_str());
     }
-    else
+    else {
       std::cout << Time::GetCurrentTime() << "     " << level << " [" << filename << "]" << " <" << line << "> " << message << std::endl; 
+
+    }
+    fclose(fp);
   }
 
 };
