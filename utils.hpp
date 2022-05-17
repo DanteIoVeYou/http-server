@@ -74,4 +74,14 @@ bool CutString(const std::string& sentence, std::string* first_string, std::stri
   }
 }
 
+std::string GetSuffix(const std::string& str) {
+  auto pos = str.rfind(".");
+  if(pos != str.npos) {
+    return str.substr(pos + 1);
+  }
+  else {
+    return nullptr;
+  }
+}
+
 } //namespace
