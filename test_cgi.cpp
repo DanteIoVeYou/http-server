@@ -42,6 +42,7 @@ bool CutParamenter(std::unordered_map<std::string, std::string>* para_map, const
   }
   return true;
 }
+
 int main()
 {
   std::cerr << "main===========================" << std::endl;
@@ -56,6 +57,7 @@ int main()
     CutParamenter(&query_map, paramenter_env);
     for(auto e: query_map) {
       std::cerr << "key: " << e.first << " " << "value: " << e.second << std::endl;
+      std::cout << "key: " << e.first << " " << "value: " << e.second << std::endl;
     }
     std::cerr << "cut done" << std::endl;
   }
@@ -68,7 +70,7 @@ int main()
     std::cerr << "length  ====" << length << std::endl;
     for(size_t i = 0; i < length; i++) {
       char ch = '1';
-      read(1, (void*)&ch, 1);
+      read(0, (void*)&ch, 1);
       std::cerr << ch << std::endl;
       request_body += ch;
       std::cerr << " read " << request_body << "enddd" << std::endl;
