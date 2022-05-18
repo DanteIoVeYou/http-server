@@ -214,8 +214,8 @@ private:
         // other method
       }
       // 重定向
-      int dup_write = dup2(input[1], 0);
-      int dup_read = dup2(output[0], 1);
+      int dup_write = dup2(input[1], 1);
+      int dup_read = dup2(output[0], 0);
       if(dup_write == -1 || dup_read == -1) {
         LOG(ERROR, "dup2 error");
         exit(500);
@@ -239,9 +239,13 @@ private:
       std::string info = "wait success, status code: ";
       info += std::to_string(status);
       LOG(INFO, info.c_str());
-      if(WIFSIGNALED(status)) {
-        // 被信号中断
-        return 500;
+      //if(WIFSIGNALED(status)) {
+      //  // 被信号中断
+      //  return 500;
+      //}
+      char ch;
+      while(read(input[0], &ch, 1) > 0) {
+        _response.response_body += ch;
       }
     }
     return OK;
@@ -340,18 +344,20 @@ private:
     if(_request.request_method == "GET") {
       if(_request.cgi == true) {
         // GET方法带参数
-        _response.response_content_type = "text/html";
+        _response.response_content_type = "Content-Type: ";
+        _response.response_content_type += "text/html";
         _response.response_content_type += "\n";
-        
-
+        _response.response_content_length = "Content-Length: ";
+        _response.response_content_length += std::to_string(_response.response_body.size());
+        _response.response_content_length += "\n";
       }
       else {
         // GET方法不带参数
-        LOG(ERROR, "==========================================");
-        LOG(DEBUG, GetSuffix(_request.request_uri).c_str());
-        _response.response_content_type = _suffix_type_map[GetSuffix(_request.request_uri)];
+        _response.response_content_type = "Content-Type: ";
+        _response.response_content_type += _suffix_type_map[GetSuffix(_request.request_uri)];
         _response.response_content_type += "\n";
-        _response.response_content_length = std::to_string(_response.response_body.size());
+        _response.response_content_length = "Content-Length: ";
+        _response.response_content_length += std::to_string(_response.response_body.size());
         _response.response_content_length += "\n";
       }
 
@@ -381,9 +387,11 @@ private:
     _response.response_line += _status_code_map[_response.status_code];
     _response.response_line += "\n";
     // 响应报头
-    _response.response_content_type = "text/html";
+    _response.response_content_type = "Content-Type: ";
+    _response.response_content_type += "text/html";
     _response.response_content_type += "\n";
-    _response.response_content_length = std::to_string(_response.response_body.size());
+    _response.response_content_length = "Content-Length: "; 
+    _response.response_content_length += std::to_string(_response.response_body.size());
     _response.response_content_length += "\n";
     LOG(INFO, "404 Page");
   }
@@ -399,8 +407,6 @@ private:
   }
 
   void SendRespToBuffer() {
-    LOG(DEBUG, _response.response_content_type.c_str());
-    LOG(DEBUG, _response.response_content_length.c_str());
     send(_sock, _response.response_line.c_str(), _response.response_line.size(), 0);
     send(_sock, _response.response_content_type.c_str(), _response.response_content_type.size(), 0);
     send(_sock, _response.response_content_length.c_str(), _response.response_content_length.size(), 0);
